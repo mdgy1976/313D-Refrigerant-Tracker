@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>313D Refrigerant Tracker</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+
+<style>
+  :root{
+    --bg: #E4E7E9;
+    --panel: #FFFFFF;
+    --panel-2: #F3F5F6;
+    --ink: #1A2229;
+    --ink-soft: #55636D;
+    --line: #C8CFD3;
+    --steel: #2C4A5E;
+    --steel-dark: #1D323F;
+    --gauge-blue: #1789A6;
+    --safety-orange: #E0521C;
+    --caution: #F2A93B;
+    --good: #2F8F5B;
+    --radius: 8px;
+    --shadow: 0 1px 2px rgba(20,28,33,.06), 0 4px 14px rgba(20,28,33,.08);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
+  html,body{margin:0; padding:0;}
+  body{
+    background:
+      radial-gradient(1200px 500px at 50% -10%, rgba(23,137,166,.10), transparent 60%),
+      var(--bg);
+    color:var(--ink);
+    font-family:'IBM Plex Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height:100vh;
+    padding-bottom:48px;
+  }
+  .wrap{max-width:560px; margin:0 auto; padding:18px 16px 8px;}
+
+  /* ---------- Header ---------- */
+  header{padding:6px 4px 18px;}
+  .eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--gauge-blue); font-weight:600; margin:0 0 4px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .eyebrow::before{content:""; width:16px; height:2px; background:var(--safety-orange); display:inline-block;}
+  h1{
+    font-family:'Oswald', sans-serif; font-weight:700; text-transform:uppercase;
+    letter-spacing:.01em; font-size:26px; margin:0; color:var(--steel-dark);
+  }
+  .sub{color:var(--ink-soft); font-size:13px; margin-top:4px;}
+
+  /* ---------- Gauge (signature element) ---------- */
+  .gauge-card{
+    background: linear-gradient(180deg, var(--steel-dark), var(--steel));
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding:20px 18px 16px;
+    color:#fff;
+    position:relative;
+    overflow:hidden;
+    margin-bottom:16px;
+  }
+  .gauge-card::after{
+    content:""; position:absolute; inset:0;
+    background: repeating-linear-gradient(115deg, rgba(255,255,255,.025) 0 2px, transparent 2px 10px);
+    pointer-events:none;
+  }
+  .gauge-row{display:flex; align-items:center; gap:16px;}
+  .gauge-dial{flex:0 0 auto; width:132px; height:132px; position:relative;}
+  .gauge-dial svg{width:100%; height:100%; display:block;}
+  .gauge-readout{
+    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  }
+  .gauge-readout .num{
+    font-family:'Oswald', sans-serif; font-weight:600; font-size:30px; line-height:1;
+    font-variant-numeric: tabular-nums; letter-spacing:.01em;
+  }
+  .gauge-readout .unit{
+    font-family:'IBM Plex Mono', monospace; font-size:9px; letter-spacing:.12em; text-transform:uppercase;
+    color:rgba(255,255,255,.65); margin-top:3px;
+  }
+  .gauge-meta{flex:1; min-width:0;}
+  .gauge-meta .label{
+    font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
+    color:rgba(255,255,255,.55); margin-bottom:8px;
+  }
+  .gauge-stats{display:flex; gap:18px; flex-wrap:wrap;}
+  .gauge-stats div{min-width:64px;}
+  .gauge-stats .n{font-family:'Oswald', sans-serif; font-size:19px; font-weight:600; font-variant-numeric: tabular-nums;}
+  .gauge-stats .l{font-family:'IBM Plex Mono', monospace; font-size:9.5px; color:rgba(255,255,255,.55); text-transform:uppercase; letter-spacing:.08em;}
+  .gauge-progress-label{font-family:'IBM Plex Mono', monospace; font-size:10px; color:rgba(255,255,255,.5); margin-top:12px;}
+
+  /* ---------- Cards ---------- */
+  .card{
+    background:var(--panel); border-radius:var(--radius); box-shadow:var(--shadow);
+    padding:16px; margin-bottom:16px; border:1px solid var(--line);
+  }
+  .card h2{
+    font-family:'Oswald', sans-serif; font-size:14.5px; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--steel-dark); margin:0 0 14px; padding-bottom:10px; border-bottom:2px solid var(--panel-2);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .card h2 .tag{
+    font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.05em; text-transform:none;
+    background:var(--panel-2); color:var(--ink-soft); padding:3px 8px; border-radius:20px; font-weight:500;
+  }
+
+  .field{margin-bottom:13px;}
+  .field label{
+    display:block; font-size:11.5px; font-weight:600; color:var(--ink-soft);
+    text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px;
+  }
+  .field-row{display:flex; gap:8px;}
+  .field-row > *{flex:1; min-width:0;}
+  input[type=text], input[type=date], input[type=number], textarea{
+    width:100%; border:1.5px solid var(--line); border-radius:6px; padding:10px 11px;
+    font-family:'IBM Plex Sans', sans-serif; font-size:15px; color:var(--ink); background:#fff;
+  }
+  input:focus, textarea:focus{outline:none; border-color:var(--gauge-blue); box-shadow:0 0 0 3px rgba(23,137,166,.15);}
+  textarea{resize:vertical; min-height:56px; font-family:'IBM Plex Sans', sans-serif;}
+  .mono-input{font-family:'IBM Plex Mono', monospace; letter-spacing:.02em;}
+  .field.invalid input{border-color:var(--safety-orange); box-shadow:0 0 0 3px rgba(224,82,28,.12);}
+  .err{display:none; color:var(--safety-orange); font-size:11.5px; margin-top:4px; font-weight:600;}
+  .field.invalid .err{display:block;}
+
+  .icon-btn{
+    flex:0 0 auto; display:flex; align-items:center; justify-content:center; gap:5px;
+    border:1.5px solid var(--line); background:var(--panel-2); color:var(--steel-dark);
+    border-radius:6px; padding:0 12px; font-size:12.5px; font-weight:600; cursor:pointer;
+    font-family:'IBM Plex Sans', sans-serif;
+  }
+  .icon-btn:active{transform:scale(.97);}
+  .icon-btn.blue{border-color:var(--gauge-blue); color:var(--gauge-blue); background:rgba(23,137,166,.07);}
+  .icon-btn svg{width:15px; height:15px; flex:0 0 auto;}
+
+  .btn{
+    width:100%; border:none; border-radius:7px; padding:13px; font-size:15px; font-weight:700;
+    font-family:'Oswald', sans-serif; text-transform:uppercase; letter-spacing:.04em; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .btn:active{transform:scale(.985);}
+  .btn-primary{background:var(--safety-orange); color:#fff;}
+  .btn-secondary{background:var(--steel); color:#fff;}
+  .btn-ghost{background:var(--panel-2); color:var(--steel-dark); border:1.5px solid var(--line);}
+  .btn-row{display:flex; gap:10px; margin-top:4px;}
+  .btn-row .btn{flex:1;}
+  .btn[disabled]{opacity:.5; pointer-events:none;}
+
+  /* ---------- Log / table ---------- */
+  .log-empty{
+    text-align:center; padding:26px 10px; color:var(--ink-soft); font-size:13.5px;
+  }
+  .log-empty svg{width:34px; height:34px; margin-bottom:8px; color:var(--line);}
+  .entry{
+    border:1.5px solid var(--line); border-radius:7px; padding:12px 13px; margin-bottom:10px; background:var(--panel);
+  }
+  .entry-top{display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:8px;}
+  .entry-date{
+    font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--gauge-blue); font-weight:600;
+    background:rgba(23,137,166,.08); padding:3px 8px; border-radius:5px;
+  }
+  .entry-hours{
+    font-family:'Oswald', sans-serif; font-weight:600; font-size:15px; color:var(--safety-orange);
+  }
+  .entry-title{font-weight:700; font-size:14.5px; margin:0 0 2px;}
+  .entry-sub{font-family:'IBM Plex Mono', monospace; font-size:11.5px; color:var(--ink-soft);}
+  .entry-addr{font-size:12.5px; color:var(--ink-soft); margin-top:6px; display:flex; gap:5px;}
+  .entry-desc{font-size:13px; margin-top:8px; line-height:1.4;}
+  .entry-notes{font-size:12px; color:var(--ink-soft); margin-top:4px; font-style:italic;}
+  .entry-actions{display:flex; gap:6px; margin-top:10px;}
+  .entry-actions button{
+    flex:1; border:1px solid var(--line); background:var(--panel-2); border-radius:5px; padding:7px;
+    font-size:11.5px; font-weight:600; color:var(--ink-soft); cursor:pointer; font-family:'IBM Plex Sans', sans-serif;
+  }
+  .entry-actions button.danger{color:var(--safety-orange); border-color:rgba(224,82,28,.35);}
+
+  .edit-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  .edit-grid .full{grid-column:1 / -1;}
+
+  /* ---------- Modal (scanner) ---------- */
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(11,16,20,.82); z-index:50;
+    display:none; align-items:center; justify-content:center; padding:20px;
+  }
+  .modal-backdrop.open{display:flex;}
+  .modal{
+    background:#0f171d; border-radius:12px; width:100%; max-width:420px; overflow:hidden;
+    border:1px solid rgba(255,255,255,.08);
+  }
+  .modal-head{
+    display:flex; justify-content:space-between; align-items:center; padding:14px 16px;
+    border-bottom:1px solid rgba(255,255,255,.08);
+  }
+  .modal-head span{color:#fff; font-family:'IBM Plex Mono', monospace; font-size:12px; letter-spacing:.06em; text-transform:uppercase;}
+  .modal-head button{background:none; border:none; color:rgba(255,255,255,.6); font-size:20px; cursor:pointer; line-height:1;}
+  #reader{width:100%; background:#000;}
+  .modal-foot{padding:12px 16px 16px; color:rgba(255,255,255,.55); font-size:12px; text-align:center;}
+
+  /* ---------- Toast ---------- */
+  #toast{
+    position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(20px);
+    background:var(--steel-dark); color:#fff; padding:11px 18px; border-radius:8px; font-size:13.5px;
+    box-shadow:var(--shadow); opacity:0; transition:all .25s ease; z-index:60; max-width:88%; text-align:center;
+  }
+  #toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  footer{text-align:center; color:var(--ink-soft); font-size:11px; padding:18px 10px 4px; font-family:'IBM Plex Mono', monospace;}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Field Service Log</p>
+    <h1>313D Refrigerant Tracker</h1>
+    <p class="sub">Log jobsite visits, running hours, and equipment data — export or share anytime.</p>
+  </header>
+
+  <!-- SIGNATURE GAUGE -->
+  <div class="gauge-card">
+    <div class="gauge-row">
+      <div class="gauge-dial">
+        <svg viewBox="0 0 132 132">
+          <circle cx="66" cy="66" r="56" fill="none" stroke="rgba(255,255,255,.10)" stroke-width="10"/>
+          <circle id="gaugeArc" cx="66" cy="66" r="56" fill="none" stroke="url(#gaugeGrad)" stroke-width="10"
+            stroke-linecap="round" stroke-dasharray="351.86" stroke-dashoffset="351.86"
+            transform="rotate(-90 66 66)"/>
+          <defs>
+            <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#1789A6"/>
+              <stop offset="100%" stop-color="#E0521C"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <div class="gauge-readout">
+          <div class="num" id="totalHours">0.0</div>
+          <div class="unit">Hrs Logged</div>
+        </div>
+      </div>
+      <div class="gauge-meta">
+        <div class="label">Running Totals</div>
+        <div class="gauge-stats">
+          <div><div class="n" id="statEntries">0</div><div class="l">Entries</div></div>
+          <div><div class="n" id="statMonth">0.0</div><div class="l">This Month</div></div>
+          <div><div class="n" id="statJobs">0</div><div class="l">Addresses</div></div>
+        </div>
+        <div class="gauge-progress-label" id="gaugeProgressLabel">0.0 hrs toward next 100</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NEW ENTRY FORM -->
+  <div class="card">
+    <h2>New Entry <span class="tag" id="formHint">fill in the ticket</span></h2>
+
+    <div class="field-row">
+      <div class="field">
+        <label for="f-date">Date</label>
+        <input type="date" id="f-date">
+      </div>
+      <div class="field">
+        <label for="f-hours">Hours Worked</label>
+        <input type="number" id="f-hours" step="0.25" min="0" placeholder="0.0">
+      </div>
+    </div>
+
+    <div class="field" id="field-address">
+      <label for="f-address">Address</label>
+      <div class="field-row">
+        <input type="text" id="f-address" placeholder="Jobsite address">
+        <button class="icon-btn blue" id="btn-gps" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+          GPS
+        </button>
+      </div>
+      <div class="err">Enter an address or use GPS.</div>
+    </div>
+
+    <div class="field" id="field-brand">
+      <label for="f-brand">Brand</label>
+      <div class="field-row">
+        <input type="text" id="f-brand" placeholder="e.g. Carrier">
+        <button class="icon-btn" data-scan="f-brand" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="1"/><path d="M7 6v12M11 6v12M15 6v12"/></svg>
+          Scan
+        </button>
+      </div>
+      <div class="err">Brand is required.</div>
+    </div>
+
+    <div class="field-row">
+      <div class="field" id="field-model">
+        <label for="f-model">Model #</label>
+        <div class="field-row">
+          <input type="text" class="mono-input" id="f-model" placeholder="Model #">
+          <button class="icon-btn" data-scan="f-model" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="1"/><path d="M7 6v12M11 6v12M15 6v12"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="field" id="field-serial">
+        <label for="f-serial">Serial #</label>
+        <div class="field-row">
+          <input type="text" class="mono-input" id="f-serial" placeholder="Serial #">
+          <button class="icon-btn" data-scan="f-serial" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="1"/><path d="M7 6v12M11 6v12M15 6v12"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="f-desc">Description of Work</label>
+      <textarea id="f-desc" placeholder="What was done on this visit..."></textarea>
+    </div>
+
+    <div class="field">
+      <label for="f-notes">Other Notes</label>
+      <textarea id="f-notes" placeholder="Anything else worth logging..."></textarea>
+    </div>
+
+    <button class="btn btn-primary" id="btn-log">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+      Log Entry
+    </button>
+  </div>
+
+  <!-- LOG -->
+  <div class="card">
+    <h2>Service Log <span class="tag" id="logCount">0 entries</span></h2>
+    <div id="logList"></div>
+  </div>
+
+  <!-- EXPORT -->
+  <div class="card">
+    <h2>Export &amp; Share</h2>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="btn-xlsx">Spreadsheet (.xlsx)</button>
+      <button class="btn btn-secondary" id="btn-pdf">PDF</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" id="btn-share">Share Log With Others</button>
+    </div>
+  </div>
+
+  <footer>313D REFRIGERANT TRACKER — DATA STAYS ON THIS DEVICE UNTIL YOU EXPORT IT</footer>
+</div>
+
+<!-- SCANNER MODAL -->
+<div class="modal-backdrop" id="scanModal">
+  <div class="modal">
+    <div class="modal-head">
+      <span id="scanTargetLabel">Scan Barcode</span>
+      <button id="scanClose">&times;</button>
+    </div>
+    <div id="reader"></div>
+    <div class="modal-foot">Point the camera at the equipment nameplate barcode.</div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var entries = [];
+  var editingId = null;
+  var scanTarget = null;
+  var html5Qr = null;
+
+  var $ = function(id){ return document.getElementById(id); };
+
+  function todayStr(){
+    var d = new Date();
+    var m = String(d.getMonth()+1).padStart(2,'0');
+    var day = String(d.getDate()).padStart(2,'0');
+    return d.getFullYear() + '-' + m + '-' + day;
+  }
+
+  function showToast(msg){
+    var t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(showToast._h);
+    showToast._h = setTimeout(function(){ t.classList.remove('show'); }, 2600);
+  }
+
+  function esc(s){
+    return String(s || '').replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  function fmtDate(iso){
+    if(!iso) return '';
+    var parts = iso.split('-');
+    if(parts.length !== 3) return iso;
+    return parts[1] + '/' + parts[2] + '/' + parts[0];
+  }
+
+  /* ---------------- Storage ---------------- */
+  async function loadEntries(){
+    try{
+      var res = await window.storage.get('entries', false);
+      entries = res && res.value ? JSON.parse(res.value) : [];
+    }catch(e){
+      entries = [];
+    }
+    renderAll();
+  }
+
+  async function saveEntries(){
+    try{
+      var res = await window.storage.set('entries', JSON.stringify(entries), false);
+      if(!res){ showToast('Could not save — try again'); }
+    }catch(e){
+      showToast('Storage error — entry kept on screen only');
+    }
+  }
+
+  /* ---------------- Gauge / stats ---------------- */
+  function renderStats(){
+    var total = entries.reduce(function(sum, e){ return sum + (parseFloat(e.hours) || 0); }, 0);
+    var now = new Date();
+    var monthTotal = entries.reduce(function(sum, e){
+      if(!e.date) return sum;
+      var d = new Date(e.date + 'T00:00:00');
+      if(d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()){
+        return sum + (parseFloat(e.hours) || 0);
+      }
+      return sum;
+    }, 0);
+    var addresses = new Set(entries.map(function(e){ return (e.address||'').trim().toLowerCase(); }).filter(Boolean));
+
+    $('totalHours').textContent = total.toFixed(1);
+    $('statEntries').textContent = entries.length;
+    $('statMonth').textContent = monthTotal.toFixed(1);
+    $('statJobs').textContent = addresses.size;
+
+    var progress = total % 100;
+    var pct = progress / 100;
+    var circumference = 351.86;
+    $('gaugeArc').style.transition = 'stroke-dashoffset .6s ease';
+    $('gaugeArc').setAttribute('stroke-dashoffset', String(circumference * (1 - pct)));
+    $('gaugeProgressLabel').textContent = progress.toFixed(1) + ' hrs toward next 100';
+  }
+
+  /* ---------------- Log rendering ---------------- */
+  function renderLog(){
+    var list = $('logList');
+    $('logCount').textContent = entries.length + (entries.length === 1 ? ' entry' : ' entries');
+
+    if(entries.length === 0){
+      list.innerHTML = '<div class="log-empty">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 2h6l1 3h3a1 1 0 011 1v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a1 1 0 011-1h3l1-3z"/><path d="M9 12h6M9 16h6"/></svg>' +
+        '<div>No entries yet. Log your first visit above.</div></div>';
+      return;
+    }
+
+    var sorted = entries.slice().sort(function(a,b){ return (b.date||'').localeCompare(a.date||'') || (b.createdAt - a.createdAt); });
+
+    list.innerHTML = sorted.map(function(e){
+      if(editingId === e.id){ return editRowHtml(e); }
+      return '<div class="entry" data-id="' + e.id + '">' +
+        '<div class="entry-top">' +
+          '<div><div class="entry-title">' + esc(e.brand || 'Unlisted Brand') + '</div>' +
+          '<div class="entry-sub">' + esc(e.model || '—') + (e.serial ? ' · SN ' + esc(e.serial) : '') + '</div></div>' +
+          '<div style="text-align:right"><div class="entry-date">' + fmtDate(e.date) + '</div>' +
+          '<div class="entry-hours">' + (parseFloat(e.hours)||0).toFixed(2) + ' hrs</div></div>' +
+        '</div>' +
+        (e.address ? '<div class="entry-addr">📍 ' + esc(e.address) + '</div>' : '') +
+        (e.desc ? '<div class="entry-desc">' + esc(e.desc) + '</div>' : '') +
+        (e.notes ? '<div class="entry-notes">' + esc(e.notes) + '</div>' : '') +
+        '<div class="entry-actions">' +
+          '<button data-edit="' + e.id + '">Edit</button>' +
+          '<button class="danger" data-del="' + e.id + '">Delete</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function editRowHtml(e){
+    return '<div class="entry" data-id="' + e.id + '">' +
+      '<div class="edit-grid">' +
+        '<div class="field full"><label>Date</label><input type="date" class="ed-date" value="' + esc(e.date) + '"></div>' +
+        '<div class="field"><label>Brand</label><input type="text" class="ed-brand" value="' + esc(e.brand) + '"></div>' +
+        '<div class="field"><label>Hours</label><input type="number" step="0.25" class="ed-hours" value="' + esc(e.hours) + '"></div>' +
+        '<div class="field"><label>Model #</label><input type="text" class="ed-model mono-input" value="' + esc(e.model) + '"></div>' +
+        '<div class="field"><label>Serial #</label><input type="text" class="ed-serial mono-input" value="' + esc(e.serial) + '"></div>' +
+        '<div class="field full"><label>Address</label><input type="text" class="ed-address" value="' + esc(e.address) + '"></div>' +
+        '<div class="field full"><label>Description</label><textarea class="ed-desc">' + esc(e.desc) + '</textarea></div>' +
+        '<div class="field full"><label>Notes</label><textarea class="ed-notes">' + esc(e.notes) + '</textarea></div>' +
+      '</div>' +
+      '<div class="entry-actions">' +
+        '<button data-save="' + e.id + '" style="color:var(--good);border-color:rgba(47,143,91,.4)">Save</button>' +
+        '<button data-cancel="' + e.id + '">Cancel</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderAll(){ renderStats(); renderLog(); }
+
+  /* ---------------- Log click delegation ---------------- */
+  $('logList').addEventListener('click', function(ev){
+    var editId = ev.target.getAttribute('data-edit');
+    var delId = ev.target.getAttribute('data-del');
+    var saveId = ev.target.getAttribute('data-save');
+    var cancelId = ev.target.getAttribute('data-cancel');
+
+    if(editId){ editingId = editId; renderLog(); }
+    else if(cancelId){ editingId = null; renderLog(); }
+    else if(delId){
+      if(confirm('Delete this log entry? This cannot be undone.')){
+        entries = entries.filter(function(e){ return e.id !== delId; });
+        saveEntries(); renderAll();
+        showToast('Entry deleted');
+      }
+    }
+    else if(saveId){
+      var row = ev.target.closest('.entry');
+      var e = entries.find(function(x){ return x.id === saveId; });
+      if(!e) return;
+      e.date = row.querySelector('.ed-date').value || e.date;
+      e.brand = row.querySelector('.ed-brand').value.trim();
+      e.hours = parseFloat(row.querySelector('.ed-hours').value) || 0;
+      e.model = row.querySelector('.ed-model').value.trim();
+      e.serial = row.querySelector('.ed-serial').value.trim();
+      e.address = row.querySelector('.ed-address').value.trim();
+      e.desc = row.querySelector('.ed-desc').value.trim();
+      e.notes = row.querySelector('.ed-notes').value.trim();
+      editingId = null;
+      saveEntries(); renderAll();
+      showToast('Entry updated');
+    }
+  });
+
+  /* ---------------- New entry form ---------------- */
+  function clearInvalid(){
+    ['field-address','field-brand'].forEach(function(id){ $(id).classList.remove('invalid'); });
+  }
+
+  function validate(){
+    clearInvalid();
+    var ok = true;
+    if(!$('f-brand').value.trim()){ $('field-brand').classList.add('invalid'); ok = false; }
+    if(!$('f-address').value.trim()){ $('field-address').classList.add('invalid'); ok = false; }
+    return ok;
+  }
+
+  $('btn-log').addEventListener('click', function(){
+    if(!validate()){ showToast('Fill in the required fields'); return; }
+    var entry = {
+      id: 'e' + Date.now() + Math.random().toString(36).slice(2,7),
+      createdAt: Date.now(),
+      date: $('f-date').value || todayStr(),
+      address: $('f-address').value.trim(),
+      brand: $('f-brand').value.trim(),
+      model: $('f-model').value.trim(),
+      serial: $('f-serial').value.trim(),
+      hours: parseFloat($('f-hours').value) || 0,
+      desc: $('f-desc').value.trim(),
+      notes: $('f-notes').value.trim()
+    };
+    entries.push(entry);
+    saveEntries();
+    renderAll();
+    showToast('Entry logged — ' + entry.hours.toFixed(2) + ' hrs added');
+
+    ['f-address','f-brand','f-model','f-serial','f-hours','f-desc','f-notes'].forEach(function(id){ $(id).value=''; });
+    $('f-date').value = todayStr();
+    clearInvalid();
+  });
+
+  /* ---------------- GPS ---------------- */
+  $('btn-gps').addEventListener('click', function(){
+    if(!navigator.geolocation){ showToast('GPS not supported on this device'); return; }
+    var btn = $('btn-gps');
+    var original = btn.innerHTML;
+    btn.innerHTML = 'Locating…';
+    btn.disabled = true;
+
+    navigator.geolocation.getCurrentPosition(async function(pos){
+      var lat = pos.coords.latitude, lon = pos.coords.longitude;
+      try{
+        var resp = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lon + '&zoom=18&addressdetails=1');
+        var data = await resp.json();
+        $('f-address').value = data && data.display_name ? data.display_name : (lat.toFixed(5) + ', ' + lon.toFixed(5));
+      }catch(e){
+        $('f-address').value = lat.toFixed(5) + ', ' + lon.toFixed(5);
+        showToast('Got coordinates — address lookup unavailable');
+      }
+      btn.innerHTML = original; btn.disabled = false;
+      $('field-address').classList.remove('invalid');
+    }, function(err){
+      btn.innerHTML = original; btn.disabled = false;
+      showToast('Could not get location — enter address manually');
+    }, { enableHighAccuracy:true, timeout:9000 });
+  });
+
+  /* ---------------- Barcode scanning ---------------- */
+  var labels = { 'f-brand':'Scan Brand Barcode', 'f-model':'Scan Model # Barcode', 'f-serial':'Scan Serial # Barcode' };
+
+  document.querySelectorAll('[data-scan]').forEach(function(btn){
+    btn.addEventListener('click', function(){ openScanner(btn.getAttribute('data-scan')); });
+  });
+
+  function openScanner(targetId){
+    if(typeof Html5Qrcode === 'undefined'){ showToast('Scanner failed to load — check connection'); return; }
+    scanTarget = targetId;
+    $('scanTargetLabel').textContent = labels[targetId] || 'Scan Barcode';
+    $('scanModal').classList.add('open');
+
+    html5Qr = new Html5Qrcode('reader');
+    html5Qr.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 240, height: 140 } },
+      function(decodedText){
+        $(scanTarget).value = decodedText;
+        $(scanTarget).closest('.field') && $(scanTarget).closest('.field').classList.remove('invalid');
+        closeScanner();
+        showToast('Scanned: ' + decodedText);
+      },
+      function(){ /* per-frame decode errors, ignore */ }
+    ).catch(function(){
+      showToast('Camera unavailable — check permissions');
+      closeScanner();
+    });
+  }
+
+  function closeScanner(){
+    $('scanModal').classList.remove('open');
+    if(html5Qr){
+      html5Qr.stop().then(function(){ html5Qr.clear(); }).catch(function(){});
+      html5Qr = null;
+    }
+  }
+  $('scanClose').addEventListener('click', closeScanner);
+
+  /* ---------------- Export: XLSX ---------------- */
+  function entriesForExport(){
+    return entries.slice().sort(function(a,b){ return (a.date||'').localeCompare(b.date||''); }).map(function(e){
+      return {
+        'Date': fmtDate(e.date),
+        'Address': e.address,
+        'Brand': e.brand,
+        'Model #': e.model,
+        'Serial #': e.serial,
+        'Hours Worked': parseFloat(e.hours)||0,
+        'Description of Work': e.desc,
+        'Other Notes': e.notes
+      };
+    });
+  }
+
+  function buildWorkbook(){
+    var rows = entriesForExport();
+    var ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [{wch:11},{wch:28},{wch:14},{wch:14},{wch:14},{wch:12},{wch:34},{wch:28}];
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Refrigerant Log');
+    return wb;
+  }
+
+  $('btn-xlsx').addEventListener('click', function(){
+    if(entries.length === 0){ showToast('Log an entry first'); return; }
+    var wb = buildWorkbook();
+    XLSX.writeFile(wb, 'refrigerant-log.xlsx');
+    showToast('Spreadsheet downloaded');
+  });
+
+  function buildPdfBlob(){
+    var jsPDF = window.jspdf.jsPDF;
+    var doc = new jsPDF({ orientation: 'landscape' });
+    var total = entries.reduce(function(s,e){ return s + (parseFloat(e.hours)||0); }, 0);
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(16);
+    doc.text('313D Refrigerant Tracker — Service Log', 14, 16);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10);
+    doc.text('Generated ' + new Date().toLocaleString() + '   |   Total hours logged: ' + total.toFixed(2), 14, 22);
+
+    var rows = entriesForExport().map(function(r){
+      return [r['Date'], r['Address'], r['Brand'], r['Model #'], r['Serial #'], r['Hours Worked'].toFixed(2), r['Description of Work'], r['Other Notes']];
+    });
+
+    doc.autoTable({
+      startY: 28,
+      head: [['Date','Address','Brand','Model #','Serial #','Hours','Description','Notes']],
+      body: rows,
+      styles: { fontSize: 8, cellPadding: 2.4 },
+      headStyles: { fillColor: [44,74,94] },
+      columnStyles: { 5: { halign: 'right' } }
+    });
+
+    return doc;
+  }
+
+  $('btn-pdf').addEventListener('click', function(){
+    if(entries.length === 0){ showToast('Log an entry first'); return; }
+    var doc = buildPdfBlob();
+    doc.save('refrigerant-log.pdf');
+    showToast('PDF downloaded');
+  });
+
+  /* ---------------- Share ---------------- */
+  $('btn-share').addEventListener('click', async function(){
+    if(entries.length === 0){ showToast('Log an entry first'); return; }
+    try{
+      var doc = buildPdfBlob();
+      var blob = doc.output('blob');
+      var file = new File([blob], 'refrigerant-log.pdf', { type: 'application/pdf' });
+
+      if(navigator.canShare && navigator.canShare({ files: [file] })){
+        await navigator.share({
+          files: [file],
+          title: '313D Refrigerant Tracker Log',
+          text: 'Refrigerant service log export'
+        });
+      } else {
+        doc.save('refrigerant-log.pdf');
+        showToast('Sharing not supported here — PDF downloaded instead');
+      }
+    }catch(e){
+      if(e && e.name !== 'AbortError'){ showToast('Could not share — try downloading instead'); }
+    }
+  });
+
+  /* ---------------- Init ---------------- */
+  $('f-date').value = todayStr();
+  loadEntries();
+})();
+</script>
+</body>
+</html>
